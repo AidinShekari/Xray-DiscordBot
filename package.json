@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "axios": "^1.6.1",
+    "discord.js": "13.6",
+    "events": "^3.3.0",
+    "geoip-lite": "^1.4.9",
+    "moment": "^2.29.4",
+    "uuid": "^9.0.1"
+  }
+}
