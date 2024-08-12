@@ -62,3 +62,9 @@ Once the bot is up and running, you can interact with it using the following com
 
 - `/addclient`: Add a new client to the Xray Core.
 - `/userstats`: Get detailed statistics for a specific user.
+
+![image](https://github.com/user-attachments/assets/7de2ca87-9e33-4431-bc80-7d78c99c3c3e)
+
+![image](https://github.com/user-attachments/assets/b98e8f82-d034-4e95-b131-d465e944b86f)
+
+
