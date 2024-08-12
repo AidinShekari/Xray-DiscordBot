@@ -176,8 +176,6 @@ async function getSessionCookie() {
       },
     });
 
-    console.log('Login response:', loginResponse.data);
-
     const cookies = loginResponse.headers['set-cookie']; 
 
     const sessionCookies = cookies.filter(cookie => cookie.startsWith('3x-ui='));
@@ -206,7 +204,6 @@ async function getSessionCookie() {
 
 async function getUserStats(username, sessionValue) {
   try {
-    console.log(sessionValue)
     const response = await axios.get(
       `${API_URL}/${DEST}/panel/api/inbounds/getClientTraffics/${username}`,
       {
