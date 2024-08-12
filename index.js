@@ -1,28 +1,24 @@
-const { Client, Intents, MessageEmbed, WebhookClient } = require('discord.js');
-const client = new Client({
-  intents: [1, 2, 1 << 9, 1 << 12]
-});
+const { Client, Intents, MessageEmbed } = require('discord.js');
 const fs = require('fs');
 const moment = require('moment');
-const geoip = require('geoip-lite');
-
-moment.suppressDeprecationWarnings = true;
-
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
-const API_URL = 'https://yoururl:panelport';
+const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 
+moment.suppressDeprecationWarnings = true;
+
+const client = new Client({
+  intents: [1, 2, 1 << 9, 1 << 12]
+});
+
+const API_URL = config.apiUrl;
+const DEST = config.destination;
 const lastOnline = new Map();
-
 const whitelist = [];
-
-client.once('ready', () => {
-  const guildId = 'guildid'; 
-  const channelId = 'channelid'; 
-
-  const guild = client.guilds.cache.get(guildId);
-  const channel = guild.channels.cache.get(channelId);
+client.once('ready', async () => {
+  const guild = client.guilds.cache.get(config.guildId);
+  const channel = guild.channels.cache.get(config.channelId);
 
   if (!guild) {
     console.log('Could not find the guild');
@@ -34,31 +30,38 @@ client.once('ready', () => {
     return;
   }
 
+  if (!config.messageId) {
+    const newMessage = await channel.send('📃 Last Connection Of Users');
+    
+    config.messageId = newMessage.id;
+    fs.writeFileSync('config.json', JSON.stringify(config, null, 2), 'utf8');
+
+    console.log(`New message sent and messageId updated to ${newMessage.id}`);
+  }
+
   setInterval(() => {
-    const lastOnline = new Map(); 
-    fs.readFile('/root/vpndb.json', 'utf8', (err, data) => {
+    fs.readFile(config.vpndbPath, 'utf8', (err, data) => {
       if (err) {
         console.error('Error reading vpndb.json:', err);
         return;
       }
 
       const vpndb = JSON.parse(data);
-
       const now = new Date().toLocaleString();
 
       const embed = new MessageEmbed()
         .setTitle('📃 Last Connection Of Users')
         .setColor('#FFFFFF')
-        .setDescription(`🔃 Pending Requests...`)
+        .setDescription('🔃 Pending Requests...')
         .setFooter({ text: `🪐 Powered By Shekari • ${moment(now).format('h:mm A')}` });
 
-        Object.entries(vpndb).forEach(([email, { time, ip }]) => {
-          const name = email.split('@')[0];
-        
-          if (whitelist.includes(name)) {
-            return;
-          }
-        
+      Object.entries(vpndb).forEach(([email, { time, ip }]) => {
+        const name = email.split('@')[0];
+
+        if (whitelist.includes(name)) {
+          return;
+        }
+
         let onlineTime;
         const duration = moment.duration(moment().diff(moment(time)));
         if (duration.asSeconds() < 60) {
@@ -69,8 +72,6 @@ client.once('ready', () => {
           onlineTime = `🔴 ${duration.humanize()} (${moment(time).format('DD/MM/YYYY HH:mm:ss')})`;
         }
 
-        onlineTime = `${onlineTime}`;
-
         lastOnline.set(email, onlineTime);
       });
 
@@ -78,26 +79,18 @@ client.once('ready', () => {
         const aTime = moment(a[1].match(/\((.*)\)/)[1], 'DD/MM/YYYY HH:mm:ss');
         const bTime = moment(b[1].match(/\((.*)\)/)[1], 'DD/MM/YYYY HH:mm:ss');
 
-        if (aTime.isAfter(bTime)) {
-          return -1; 
-        } else if (aTime.isBefore(bTime)) {
-          return 1; 
-        } else {
-          return 0; 
-        }
+        return aTime.isAfter(bTime) ? -1 : (aTime.isBefore(bTime) ? 1 : 0);
       }));
 
       sortedLastOnline.forEach((value, key) => {
-        const name = key.split('@')[0]; 
+        const name = key.split('@')[0];
         embed.addField(name, value.replace(' (', '\n('), true);
       });
-	  
-	  const greenGlobeUsers = Array.from(sortedLastOnline.values()).filter(value => {
-		return value.includes('🟢');
-		}).length;
-		client.user.setActivity(`🟢 ${greenGlobeUsers} Active Client`, { type: 'WATCHING' });
 
-      channel.messages.fetch('messagechannelid').then(message => {
+      const greenGlobeUsers = Array.from(sortedLastOnline.values()).filter(value => value.includes('🟢')).length;
+      client.user.setActivity(`🟢 ${greenGlobeUsers} Active Client`, { type: 'WATCHING' });
+
+      channel.messages.fetch(config.messageId).then(message => {
         message.edit({ embeds: [embed] });
       }).catch(err => console.log(err));
     });
@@ -116,8 +109,8 @@ client.once('ready', () => {
   });
 
   client.application.commands.create({
-    name: 'addinbound',
-    description: 'Add an inbound',
+    name: 'addclient',
+    description: 'Add an client',
     options: [
       {
         name: 'inboundid',
@@ -173,17 +166,82 @@ client.once('ready', () => {
 
 async function getSessionCookie() {
   try {
-    const loginResponse = await axios.post(`${API_URL}/paneldirect/login`, 'username=username&password=password', {
+    const loginResponse = await axios.post(`${API_URL}/${DEST}/login`, {
+      username: config.username,
+      password: config.password
+    }, {
       headers: {
         'Accept-Language': 'en-US',
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/json'
       },
     });
 
-    const sessionCookie = loginResponse.headers['set-cookie'][0];
-    return sessionCookie;
+    console.log('Login response:', loginResponse.data);
+
+    const cookies = loginResponse.headers['set-cookie']; 
+
+    const sessionCookies = cookies.filter(cookie => cookie.startsWith('3x-ui='));
+
+    if (sessionCookies.length < 2) {
+      console.error('Less than two 3x-ui cookies found.');
+      return null;
+    }
+
+    const secondSessionCookie = sessionCookies[1];
+    const sessionValue = secondSessionCookie ? secondSessionCookie.split(';')[0].split('=')[1] : null;
+
+    if (!sessionValue) {
+      console.error('3x-ui cookie not found.');
+      return null;
+    }
+
+    return sessionValue;
+
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error:', error.message);
+    console.error('Error details:', error.response ? error.response.data : error.message);
+    return null;
+  }
+}
+
+async function getUserStats(username, sessionValue) {
+  try {
+    console.log(sessionValue)
+    const response = await axios.get(
+      `${API_URL}/${DEST}/panel/api/inbounds/getClientTraffics/${username}`,
+      {
+        headers: {
+          'Accept': 'application/json',
+          'Cookie': `3x-ui=${sessionValue}=; lang=en-US`
+        },
+      }
+    );
+
+    const userStatsData = response.data;
+    const { down, up, expiryTime, email, id, inboundId, enable } = userStatsData.obj;
+
+    const TotalUsage = ((down + up) / (1024 * 1024 * 1024)).toFixed(2);
+    const formattedExpiryTime = expiryTime === 0 ? 'No Expiry Time' : moment(expiryTime).format('YYYY-MM-DD HH:mm:ss');
+
+    const userStatsEmbed = new MessageEmbed()
+      .setColor('#0099ff')
+      .setTitle(':bar_chart: User Statistics')
+      .setDescription(`User stats for ${email}`)
+      .addFields(
+        { name: ':email: Email', value: email.toString(), inline: true },
+        { name: ':id: ID', value: id.toString(), inline: true },
+        { name: ':inbox_tray: Inbound ID', value: inboundId.toString(), inline: true },
+        { name: ':lock: Enabled', value: enable ? 'Yes' : 'No', inline: true },
+        { name: ':arrow_up: Up', value: `${(up / (1024 * 1024 * 1024)).toFixed(2)} GB`, inline: true },
+        { name: ':arrow_down: Down', value: `${(down / (1024 * 1024 * 1024)).toFixed(2)} GB`, inline: true },
+        { name: ':chart_with_upwards_trend: Total Usage', value: `${TotalUsage} GB`, inline: true },
+        { name: ':alarm_clock: Expiry Time', value: formattedExpiryTime, inline: true }
+      );
+
+    return userStatsEmbed;
+  } catch (error) {
+    console.error('User stats error:', error.message);
+    console.error('Error details:', error.response ? error.response.data : error.message);
     return null;
   }
 }
@@ -194,14 +252,14 @@ client.on('interactionCreate', async (interaction) => {
   const command = interaction.commandName;
   if (command === 'userstats') {
     const username = interaction.options.getString('username');
-    const sessionCookie = await getSessionCookie();
+    const sessionValue = await getSessionCookie();
 
-    if (!sessionCookie) {
+    if (!sessionValue) {
       interaction.reply('Failed to get session cookie. Please check the login credentials.');
       return;
     }
 
-    const userStats = await getUserStats(username, sessionCookie);
+    const userStats = await getUserStats(username, sessionValue);
 
     if (!userStats) {
       interaction.reply(`Failed to get user stats for ${username}.`);
@@ -210,7 +268,8 @@ client.on('interactionCreate', async (interaction) => {
 
     interaction.reply({ embeds: [userStats] });
   }
-  else if (command === 'addinbound') {  
+
+  else if (command === 'addclient') {  
     const inboundId = interaction.options.getInteger('inboundid');
     const email = interaction.options.getString('email');
     const limitIp = interaction.options.getInteger('limitip');
@@ -239,24 +298,24 @@ client.on('interactionCreate', async (interaction) => {
       })
     };
   
-    const sessionCookie = await getSessionCookie();
+    const sessionValue = await getSessionCookie();
   
-    if (!sessionCookie) {
+    if (!sessionValue) {
       interaction.reply('Failed to get session cookie. Please check the login credentials.');
       return;
     }
   
     try {
-      const addInboundResponse = await axios.post(`${API_URL}/panel/api/inbounds/addClient`, settings, {
+      const addInboundResponse = await axios.post(`${API_URL}/${DEST}/panel/api/inbounds/addClient`, settings, {
         headers: {
           'Accept-Language': 'en-US',
-          'Cookie': sessionCookie,
+          'Cookie': `3x-ui=${sessionValue}=; lang=en-US`,
           'Content-Type': 'application/json'
         }
       });
   
       if (addInboundResponse.data.success) {
-        interaction.reply(`Successfully added inbound with ID ${inboundId}`);
+        interaction.reply(`Successfully added inbound with ID ${inboundId}\n`);
       } else {
         interaction.reply('Failed to add inbound. Please check the input parameters.');
       }
@@ -267,49 +326,5 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-  async function getUserStats(username, sessionCookie) {
-    try {
-      const userStatsResponse = await axios.get(`${API_URL}/panel/api/inbounds/getClientTraffics/${username}`, {
-        headers: {
-          'Accept-Language': 'en-US',
-          'Cookie': sessionCookie,
-        },
-      });
-  
-      const userStatsData = userStatsResponse.data;
-      let expiryTime;
 
-      const TotalUsage = ((userStatsData.obj.down + userStatsData.obj.up) / (1024 * 1024 * 1024)).toFixed(2);
-
-      if (userStatsData.obj.expiryTime === 0) {
-        expiryTime = 'No Expiry Time';
-      } else {
-        expiryTime = moment(userStatsData.obj.expiryTime).format('YYYY-MM-DD HH:mm:ss');
-      }
-  
-      if (userStatsData.success && userStatsData.obj) {
-        const userStatsEmbed = new MessageEmbed()
-          .setColor('#0099ff')
-          .setTitle(':bar_chart: User Statistics')
-          .setDescription(`User stats for ${userStatsData.obj.email}`)
-          .addFields(
-            { name: ':email: Email', value: userStatsData.obj.email.toString(), inline: true },
-            { name: ':id: ID', value: userStatsData.obj.id.toString(), inline: true },
-            { name: ':inbox_tray: Inbound ID', value: userStatsData.obj.inboundId.toString(), inline: true },
-            { name: ':lock: Enabled', value: userStatsData.obj.enable ? 'Yes' : 'No', inline: true },
-            { name: ':arrow_up: Up', value: `${(userStatsData.obj.up / (1024 * 1024 * 1024)).toFixed(2)} GB`, inline: true },
-            { name: ':arrow_down: Down', value: `${(userStatsData.obj.down / (1024 * 1024 * 1024)).toFixed(2)} GB`, inline: true },
-            { name: ':chart_with_upwards_trend: Total Usage', value: `${TotalUsage} GB`, inline: true },
-            { name: ':alarm_clock: Expiry Time', value: expiryTime, inline: true }
-            )
-        return userStatsEmbed;
-      } else {
-        throw new Error(userStatsData.msg || 'User stats not found.');
-      }
-    } catch (error) {
-      console.error('User stats error:', error);
-      return null;
-    }
-  }
-
-client.login('bottoken');
+client.login(config.token);
