@@ -1,0 +1,11 @@
+{
+  "token": "Discord-Bot-Token",
+  "guildId": "guildID",
+  "channelId": "channelID",
+  "apiUrl": "http://localhost:13801",
+  "destination": "paneldest",
+  "messageId": "",
+  "vpndbPath": "/root/vpndb.json",
+  "username": "",
+  "password": ""
+}
