@@ -49,11 +49,11 @@ Before using this project, you need to set up the [Xray-SaveLog](https://github.
     - `token`: Your Discord bot token.
     - `guildId`: The ID of the Discord server where the bot will operate.
     - `channelId`: The ID of the Discord channel where the bot will post updates.
-    - `apiUrl`: The URL of your Xray-SaveLog API.
+    - `apiUrl`: The URL of your 3x-ui dashboard.
     - `destination`: The panel destination (customize as per your setup).
     - `messageId`: Leave this blank or use it to specify a message ID for persistent bot messages.
     - `vpndbPath`: The path to your `vpndb.json` file.
-    - `username` and `password`: Credentials for authenticating with your xray-dashboard.
+    - `username` and `password`: Credentials for authenticating with your 3x-ui dashboard.
 
 
 ## Usage
